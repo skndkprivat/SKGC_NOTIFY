@@ -1,0 +1,52 @@
+Folder PATH listing for volume Windows
+Volume serial number is 828D-8E63
+C:.
+¦   .env
+¦   .env.example
+¦   index.js
+¦   package-lock.json
+¦   package.json
+¦   README.md
+¦   sprog.txt
+¦   tree.txt
+¦   
++---config
+¦       connections.json
+¦       
++---node_modules
+¦   ¦   .package-lock.json
+¦   ¦   
+¦   
++---public
+¦   +---css
+¦   ¦       styles.css
+¦   ¦       
+¦   +---img
+¦   +---js
+¦           main.js
+¦           
++---scr
+¦   ¦   app.js
+¦   ¦   
+¦   +---routes
+¦   ¦       connections.js
+¦   ¦       notifications.js
+¦   ¦       oauth.js
+¦   ¦       
+¦   +---services
+¦   ¦       encryption.js
+¦   ¦       genesys.js
+¦   ¦       token.js
+¦   ¦       
+¦   +---utils
+¦           logger.js
+¦           translations.js
+¦           
++---views
+    ¦   error.ejs
+    ¦   index.ejs
+    ¦   
+    +---partials
+            footer.ejs
+            header.ejs
+            

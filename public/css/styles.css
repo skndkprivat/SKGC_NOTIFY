@@ -1,0 +1,9 @@
+@keyframes bgFade {
+    0% { background-color: #f0f8ff; }
+    50% { background-color: #e6f2ff; }
+    100% { background-color: #f0f8ff; }
+}
+
+.bg-fade {
+    animation: bgFade 0.5s ease;
+}

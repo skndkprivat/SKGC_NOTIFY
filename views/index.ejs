@@ -1,0 +1,526 @@
+<!-- views/index.ejs -->
+<!DOCTYPE html>
+<html lang="<%= currentLang %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= t.appTitle %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        .notification-card {
+            max-height: 600px; /* Større højde */
+            overflow-y: auto;
+        }
+        
+        .connection-card {
+            margin-bottom: 20px;
+        }
+        
+        .form-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        
+        .language-selector {
+            margin-bottom: 20px;
+        }
+        
+        #dashboard-section {
+            background-color: #f0f8ff; /* Lysere baggrund for at fremhæve */
+            border-left: 4px solid #007bff; /* Blå sidemarkering */
+            padding-left: 24px; /* Ekstra padding */
+        }
+        
+        .alert-success {
+            border-left: 4px solid #28a745;
+        }
+        
+        .collapsed-section {
+            border-top: 1px solid #dee2e6;
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+        
+        /* Status indikatorer */
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        @keyframes bgFade {
+			0% { background-color: #f0f8ff; }
+			50% { background-color: #e6f2ff; }
+			100% { background-color: #f0f8ff; }
+		}
+
+		.bg-fade {
+			animation: bgFade 0.5s ease;
+		}
+        .status-available { background-color: #28a745; }
+        .status-away { background-color: #ffc107; }
+        .status-busy { background-color: #dc3545; }
+        .status-offline { background-color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <h1 class="mb-4"><%= t.appTitle %></h1>
+        
+        <!-- Language selector -->
+        <div class="language-selector">
+            <div class="btn-group" role="group">
+                <a href="/lang/da" class="btn btn-sm <%= currentLang === 'da' ? 'btn-primary' : 'btn-outline-primary' %>">Dansk</a>
+                <a href="/lang/en" class="btn btn-sm <%= currentLang === 'en' ? 'btn-primary' : 'btn-outline-primary' %>">English</a>
+                <a href="/lang/de" class="btn btn-sm <%= currentLang === 'de' ? 'btn-primary' : 'btn-outline-primary' %>">Deutsch</a>
+                <a href="/lang/fr" class="btn btn-sm <%= currentLang === 'fr' ? 'btn-primary' : 'btn-outline-primary' %>">Français</a>
+            </div>
+        </div>
+        
+        <!-- Connections -->
+        <div class="form-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2><%= t.connections %></h2>
+                <button class="btn btn-sm btn-outline-secondary toggle-section" data-section="connections">
+                    <i class="bi bi-chevron-up"></i>
+                </button>
+            </div>
+            <div id="connections-content">
+                <div class="row">
+                    <% connections.forEach(connection => { %>
+                        <div class="col-md-4">
+                            <div class="card connection-card">
+                                <div class="card-header">
+                                    <h5 class="card-title"><%= connection.name %></h5>
+                                </div>
+                                <div class="card-body">
+                                    <p><strong><%= t.region %>:</strong> <%= connection.region %></p>
+                                    <p><strong><%= t.clientId %>:</strong> <%= connection.clientId.substring(0, 8) %>...</p>
+                                <div class="d-flex justify-content-between">
+                                    <% if(!connection.authorized) { %>
+                                        <a href="/auth/<%= connection.id %>" class="btn btn-primary btn-sm">Autoriser</a>
+                                    <% } else { %>
+                                        <span class="badge bg-success">✓ Autoriseret</span>
+                                    <% } %>
+                                    <form action="/connections/remove/<%= connection.id %>" method="POST" class="ms-2">
+                                        <button type="submit" class="btn btn-danger btn-sm"><%= t.removeBtn %></button>
+                                    </form>
+                                </div>                     
+                            </div>
+                            </div>
+                        </div>
+                    <% }) %>
+                </div>
+                
+                <hr>
+                
+                <h3><%= t.addNewConnection %></h3>
+                <form action="/connections/add" method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label"><%= t.customerName %></label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="clientId" class="form-label"><%= t.clientId %></label>
+                        <input type="text" class="form-control" id="clientId" name="clientId" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="clientSecret" class="form-label"><%= t.clientSecret %></label>
+                        <input type="password" class="form-control" id="clientSecret" name="clientSecret" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="region" class="form-label"><%= t.region %></label>
+                        <select class="form-control" id="region" name="region">
+                            <option value="mypurecloud.de" selected>Frankfurt (mypurecloud.de)</option>
+                            <option value="mypurecloud.com">US East (mypurecloud.com)</option>
+                            <option value="mypurecloud.ie">Dublin (mypurecloud.ie)</option>
+                            <option value="mypurecloud.com.au">Sydney (mypurecloud.com.au)</option>
+                            <option value="mypurecloud.jp">Tokyo (mypurecloud.jp)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><%= t.addBtn %></button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Notification Listener -->
+        <div class="form-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2><%= t.listenToNotifications %></h2>
+                <button class="btn btn-sm btn-outline-secondary toggle-section" data-section="notifications">
+                    <i class="bi bi-chevron-up"></i>
+                </button>
+            </div>
+            <div id="notifications-content">
+                <!-- Active Connections -->
+                <div class="mb-4">
+                    <h3><%= t.activeConnections %></h3>
+                    <% if (activeNotifications.length === 0) { %>
+                        <p><%= t.noActiveListeners %></p>
+                    <% } else { %>
+                        <div class="row">
+                            <% activeNotifications.forEach(active => { %>
+                                <div class="col-md-4">
+                                    <div class="card mb-3">
+                                        <div class="card-header">
+                                            <h5 class="card-title"><%= active.name %></h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p><strong><%= t.listeningTo %></strong></p>
+                                            <ul>
+                                                <% active.topics.forEach(topic => { %>
+                                                    <li><%= availableTopics.find(t => t.id === topic)?.name || topic %></li>
+                                                <% }) %>
+                                            </ul>
+                                            <form action="/notifications/stop/<%= active.id %>" method="POST">
+                                                <button type="submit" class="btn btn-warning btn-sm"><%= t.stopListeningBtn %></button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            <% }) %>
+                        </div>
+                    <% } %>
+                </div>
+                
+                <!-- Start New Listening -->
+                <div>
+                    <h3><%= t.startNewListening %></h3>
+                    <% if (connections.length === 0) { %>
+                        <p><%= t.addConnectionFirst %></p>
+                    <% } else { %>
+                        <form action="/notifications/listen" method="POST">
+                            <div class="mb-3">
+                                <label for="connectionId" class="form-label"><%= t.selectConnection %></label>
+                                <select class="form-control" id="connectionId" name="connectionId" required>
+                                    <option value=""><%= t.selectCustomer %></option>
+                                    <% connections.forEach(connection => { %>
+                                        <option value="<%= connection.id %>"><%= connection.name %></option>
+                                    <% }) %>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><%= t.selectNotifications %></label>
+                                <div class="row">
+                                    <% availableTopics.forEach(topic => { %>
+                                        <div class="col-md-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="topics" value="<%= topic.id %>" id="topic-<%= topic.id %>">
+                                                <label class="form-check-label" for="topic-<%= topic.id %>">
+                                                    <%= topic.name %>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success"><%= t.startListeningBtn %></button>
+                        </form>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Notification Dashboard -->
+        <div class="form-section" id="dashboard-section">
+            <h2><%= t.notificationDashboard %></h2>
+            <% if (activeNotifications.length === 0) { %>
+                <p><%= t.startListeningToSee %></p>
+            <% } else { %>
+                <div class="mb-3">
+                    <label for="connectionSelector" class="form-label"><%= t.selectConnection %></label>
+                    <select class="form-control" id="connectionSelector">
+                        <option value=""><%= t.selectConnectionToView %></option>
+                        <% activeNotifications.forEach(active => { %>
+                            <option value="<%= active.id %>"><%= active.name %></option>
+                        <% }) %>
+                    </select>
+                </div>
+
+                <div class="card notification-card">
+                    <div class="card-header">
+                        <h5><%= t.latestNotifications %></h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="notificationsList">
+                            <p class="text-center"><%= t.selectConnectionToView %></p>
+                        </div>
+                    </div>
+                </div>
+            <% } %>
+        </div>
+    </div>
+    
+    <script>
+        // Log til konsollen når DOM er loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM fuldt indlæst');
+            console.log('connectionSelector findes:', !!document.getElementById('connectionSelector'));
+            console.log('notificationsList findes:', !!document.getElementById('notificationsList'));
+            
+            const connectionSelector = document.getElementById('connectionSelector');
+            const notificationsList = document.getElementById('notificationsList');
+            let pollingInterval;
+            
+            // Tilføj event listeners til toggle-knapperne
+            const toggleButtons = document.querySelectorAll('.toggle-section');
+            toggleButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const section = this.getAttribute('data-section');
+                    const content = document.getElementById(`${section}-content`);
+                    const icon = this.querySelector('i');
+                    
+                    console.log('Toggle klikket for sektion:', section);
+                    
+                    if (content) {
+                        // Tjek computed style i stedet for inline style
+                        const currentDisplay = window.getComputedStyle(content).display;
+                        
+                        if (currentDisplay === 'none') {
+                            content.style.display = 'block';
+                            if (icon) {
+                                icon.classList.remove('bi-chevron-down');
+                                icon.classList.add('bi-chevron-up');
+                            }
+                            console.log('Viser indhold');
+                        } else {
+                            content.style.display = 'none';
+                            if (icon) {
+                                icon.classList.remove('bi-chevron-up');
+                                icon.classList.add('bi-chevron-down');
+                            }
+                            console.log('Skjuler indhold');
+                        }
+                    }
+                });
+            });
+            
+            // Auto-select forbindelse hvis der kun er en
+            function checkAndAutoSelect() {
+                if (connectionSelector && connectionSelector.options.length === 2) {
+                    connectionSelector.selectedIndex = 1;
+                    const event = new Event('change');
+                    connectionSelector.dispatchEvent(event);
+                }
+            }
+            
+            // Kald auto-select efter en kort forsinkelse
+            setTimeout(checkAndAutoSelect, 500);
+            
+            function startPolling(connectionId) {
+                console.log('Starter polling for ID:', connectionId);
+                // Stop tidligere interval hvis det findes
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                }
+                
+                // Start nyt interval
+                pollingInterval = setInterval(() => {
+                    fetchNotifications(connectionId);
+                }, 10000); // Opdater hver 10. sekund
+            }
+            
+            // Event listener for ændring af forbindelse
+            if (connectionSelector) {
+                connectionSelector.addEventListener('change', function() {
+                    const connectionId = this.value;
+                    
+                    if (connectionId) {
+                        console.log('Forbindelse valgt:', connectionId);
+                        
+                        // Find indholdselementerne
+                        const connectionsContent = document.getElementById('connections-content');
+                        const notificationsContent = document.getElementById('notifications-content');
+                        
+                        // Log for debugging
+                        console.log('Connections content fundet:', !!connectionsContent);
+                        console.log('Notifications content fundet:', !!notificationsContent);
+                        
+                        // Skjul sektioner
+                        if (connectionsContent) connectionsContent.style.display = 'none';
+                        if (notificationsContent) notificationsContent.style.display = 'none';
+                        
+                        // Opdater ikonerne
+                        const icons = document.querySelectorAll('.toggle-section i');
+                        icons.forEach(icon => {
+                            icon.classList.remove('bi-chevron-up');
+                            icon.classList.add('bi-chevron-down');
+                        });
+                        
+                        // Scroll til dashboard
+                        document.getElementById('dashboard-section').scrollIntoView({
+                            behavior: 'smooth'
+                        });
+                        
+                        // Hent notifikationer og start polling
+                        fetchNotifications(connectionId);
+                        startPolling(connectionId);
+                    } else {
+                        console.log('Ingen forbindelse valgt');
+                        if (notificationsList) {
+                            notificationsList.innerHTML = '<p class="text-center">Vælg en forbindelse for at se notifikationer</p>';
+                        }
+                    }
+                });
+            }
+            
+            // Opdateret fetchNotifications funktion
+            function fetchNotifications(connectionId) {
+                console.log('Henter notifikationer for ID:', connectionId);
+                
+                // Tjek om connectionId er gyldig
+                if (!connectionId) {
+                    console.error('Manglende connectionId');
+                    if (notificationsList) {
+                        notificationsList.innerHTML = '<p class="text-danger">Vælg venligst en forbindelse</p>';
+                    }
+                    return;
+                }
+                
+                // Tjek om notificationsList findes
+                if (!notificationsList) {
+                    console.error('notificationsList element ikke fundet!');
+                    return;
+                }
+                
+                // Vis loading indikator
+                notificationsList.innerHTML = '<p class="text-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Henter...</span></div> Henter notifikationer...</p>';
+                
+                // Tilføj en timestamp for at forhindre caching
+                const timestamp = new Date().getTime();
+                fetch(`/api/notifications/${connectionId}?t=${timestamp}`)
+                    .then(response => {
+                        console.log('API respons status:', response.status);
+                        if (!response.ok) {
+                            throw new Error(`Netværk respons ikke OK: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Modtagne notifikationer fra API:', data ? data.length : 0, 'notifikationer');
+                        if (data && data.length > 0) {
+                            console.log('Første notifikation:', JSON.stringify(data[0]).substring(0, 100) + '...');
+                        }
+                        displayNotifications(data);
+                    })
+                    .catch(error => {
+                        console.error('Fejl ved hentning af notifikationer:', error);
+                        notificationsList.innerHTML = `<p class="text-danger">Fejl ved hentning af notifikationer: ${error.message}</p>`;
+                    });
+            }
+            
+            // Opdateret displayNotifications funktion
+            function displayNotifications(notifications) {
+                console.log('displayNotifications kaldt med', notifications ? notifications.length : 0, 'notifikationer');
+                
+                if (!notificationsList) {
+                    console.error('notificationsList element ikke fundet!');
+                    return;
+                }
+                
+                if (!notifications || notifications.length === 0) {
+                    notificationsList.innerHTML = '<p class="text-center"><%= t.noNotificationsYet %></p>';
+                    return;
+                }
+                
+                let html = '<h4>Seneste statusopdateringer:</h4>';
+                
+                notifications.forEach((notification, index) => {
+                    console.log(`Behandler notifikation ${index + 1}/${notifications.length}`);
+                    
+                    try {
+                        // Sikr at timestamp eksisterer
+                        const timestamp = notification.timestamp ? new Date(notification.timestamp) : new Date();
+                        const time = timestamp.toLocaleString();
+                        const topic = notification.topic || 'unknown-topic';
+                        
+                        // Hvis det er en presence-notifikation
+                        if (topic.includes('presence') && notification.data && notification.data.presenceDefinition) {
+                            const status = notification.data.presenceDefinition.systemPresence.toLowerCase();
+                            const name = notification.data.name || 'Ukendt bruger';
+                            const message = notification.data.presenceDefinition.presenceMessage || '';
+                            
+                            // Map status til klasse
+                            let statusClass = 'status-offline';
+                            if (status.includes('available')) statusClass = 'status-available';
+                            else if (status.includes('away')) statusClass = 'status-away';
+                            else if (status.includes('busy')) statusClass = 'status-busy';
+                            
+                            html += `
+                                <div class="alert alert-light mb-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="status-indicator ${statusClass}"></span>
+                                            <strong>${name}</strong> - ${status.toUpperCase()}
+                                            ${message ? `<small class="text-muted">(${message})</small>` : ''}
+                                        </div>
+                                        <small class="text-muted">${time}</small>
+                                    </div>
+                                </div>
+                            `;
+                        } 
+                        // Hvis det er en kvalitetsvurdering
+                        else if (topic.includes('quality.evaluations') && notification.data) {
+                            const data = notification.data;
+                            const evaluationName = data.evaluationForm ? data.evaluationForm.name : 'Evaluering';
+                            const score = data.score !== undefined ? `${(data.score * 100).toFixed(1)}%` : 'N/A';
+                            const evaluator = data.evaluator ? data.evaluator.name : 'Ukendt';
+                            
+                            html += `
+                                <div class="alert alert-info mb-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>${evaluationName}</strong> - Score: ${score}<br>
+                                            <small>Evalueret af: ${evaluator}</small>
+                                        </div>
+                                        <small class="text-muted">${time}</small>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        else {
+                            // Standard notifikation visning for andre typer
+                            const data = JSON.stringify(notification.data, null, 2);
+                            
+                            html += `
+                                <div class="alert alert-secondary mb-3">
+                                    <p><strong>Tidspunkt:</strong> ${time}</p>
+                                    <p><strong>Emne:</strong> ${topic}</p>
+                                    <pre>${data}</pre>
+                                </div>
+                            `;
+                        }
+                    } catch (error) {
+                        console.error('Fejl ved behandling af notifikation:', error, notification);
+                        html += `
+                            <div class="alert alert-danger mb-2">
+                                <p>Fejl ved visning af notifikation: ${error.message}</p>
+                                <pre>${JSON.stringify(notification, null, 2)}</pre>
+                            </div>
+                        `;
+                    }
+                });
+                
+                console.log('Opdaterer DOM med nye notifikationer');
+                notificationsList.innerHTML = html;
+                
+                // Tilføj en kort animation på dashboardet for at indikere opdatering
+                const dashboardSection = document.getElementById('dashboard-section');
+                if (dashboardSection) {
+                    dashboardSection.classList.add('bg-fade');
+                    setTimeout(() => {
+                        dashboardSection.classList.remove('bg-fade');
+                    }, 500);
+                } else {
+                    console.error('dashboard-section element ikke fundet!');
+                }
+            }
+        });
+    </script>    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -203,6 +203,35 @@
                                     <% }) %>
                                 </select>
                             </div>
+                            
+                            <!-- Ny sektion: Vælg metode -->
+                            <div class="mb-3">
+                                <label class="form-label">Metode</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="method" id="method-websocket" value="websocket" checked>
+                                    <label class="form-check-label" for="method-websocket">
+                                        WebSocket (realtid, anbefalet)
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="method" id="method-polling" value="polling">
+                                    <label class="form-check-label" for="method-polling">
+                                        Polling (manuel opdatering)
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Polling interval (vises kun når polling er valgt) -->
+                            <div class="mb-3" id="polling-interval-section" style="display: none;">
+                                <label for="pollingInterval" class="form-label">Opdateringsinterval (sekunder)</label>
+                                <select class="form-control" id="pollingInterval" name="pollingInterval">
+                                    <option value="10000">10 sekunder</option>
+                                    <option value="30000" selected>30 sekunder</option>
+                                    <option value="60000">1 minut</option>
+                                    <option value="300000">5 minutter</option>
+                                </select>
+                            </div>
+
                             <div class="mb-3">
                                 <label class="form-label"><%= t.selectNotifications %></label>
                                 <div class="row">
@@ -299,6 +328,22 @@
                 });
             });
             
+            // Toggle polling interval section baseret på valgt metode
+            const methodRadios = document.querySelectorAll('input[name="method"]');
+            const pollingIntervalSection = document.getElementById('polling-interval-section');
+            
+            if (methodRadios && pollingIntervalSection) {
+                methodRadios.forEach(radio => {
+                    radio.addEventListener('change', function() {
+                        if (this.value === 'polling' && this.checked) {
+                            pollingIntervalSection.style.display = 'block';
+                        } else {
+                            pollingIntervalSection.style.display = 'none';
+                        }
+                    });
+                });
+            }
+            
             // Auto-select forbindelse hvis der kun er en
             function checkAndAutoSelect() {
                 if (connectionSelector && connectionSelector.options.length === 2) {
@@ -318,8 +363,12 @@
                     clearInterval(pollingInterval);
                 }
                 
+                // Hent én gang med det samme
+                fetchNotifications(connectionId);
+                
                 // Start nyt interval
                 pollingInterval = setInterval(() => {
+                    console.log('Polling: Henter opdaterede notifikationer');
                     fetchNotifications(connectionId);
                 }, 10000); // Opdater hver 10. sekund
             }
@@ -352,9 +401,12 @@
                         });
                         
                         // Scroll til dashboard
-                        document.getElementById('dashboard-section').scrollIntoView({
-                            behavior: 'smooth'
-                        });
+                        const dashboardSection = document.getElementById('dashboard-section');
+                        if (dashboardSection) {
+                            dashboardSection.scrollIntoView({
+                                behavior: 'smooth'
+                            });
+                        }
                         
                         // Hent notifikationer og start polling
                         fetchNotifications(connectionId);
@@ -388,7 +440,7 @@
                 }
                 
                 // Vis loading indikator
-                notificationsList.innerHTML = '<p class="text-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Henter...</span></div> Henter notifikationer...</p>';
+                notificationsList.innerHTML = '<p class="text-center"><span class="spinner-border spinner-border-sm"></span> Henter notifikationer...</p>';
                 
                 // Tilføj en timestamp for at forhindre caching
                 const timestamp = new Date().getTime();
@@ -409,7 +461,9 @@
                     })
                     .catch(error => {
                         console.error('Fejl ved hentning af notifikationer:', error);
-                        notificationsList.innerHTML = `<p class="text-danger">Fejl ved hentning af notifikationer: ${error.message}</p>`;
+                        if (notificationsList) {
+                            notificationsList.innerHTML = `<p class="text-danger">Fejl ved hentning af notifikationer: ${error.message}</p>`;
+                        }
                     });
             }
             
@@ -423,7 +477,7 @@
                 }
                 
                 if (!notifications || notifications.length === 0) {
-                    notificationsList.innerHTML = '<p class="text-center"><%= t.noNotificationsYet %></p>';
+                    notificationsList.innerHTML = '<p class="text-center">Ingen notifikationer endnu</p>';
                     return;
                 }
                 
@@ -438,11 +492,15 @@
                         const time = timestamp.toLocaleString();
                         const topic = notification.topic || 'unknown-topic';
                         
+                        console.log(`Notifikation ${index + 1}: Topic=${topic}, Timestamp=${time}`);
+                        
                         // Hvis det er en presence-notifikation
                         if (topic.includes('presence') && notification.data && notification.data.presenceDefinition) {
                             const status = notification.data.presenceDefinition.systemPresence.toLowerCase();
                             const name = notification.data.name || 'Ukendt bruger';
                             const message = notification.data.presenceDefinition.presenceMessage || '';
+                            
+                            console.log(`Presence: ${name}, Status: ${status}`);
                             
                             // Map status til klasse
                             let statusClass = 'status-offline';
@@ -470,6 +528,8 @@
                             const score = data.score !== undefined ? `${(data.score * 100).toFixed(1)}%` : 'N/A';
                             const evaluator = data.evaluator ? data.evaluator.name : 'Ukendt';
                             
+                            console.log(`Evaluering: ${evaluationName}, Score: ${score}`);
+                            
                             html += `
                                 <div class="alert alert-info mb-2">
                                     <div class="d-flex justify-content-between align-items-center">
@@ -484,13 +544,20 @@
                         }
                         else {
                             // Standard notifikation visning for andre typer
-                            const data = JSON.stringify(notification.data, null, 2);
+                            console.log(`Andet: Topic=${topic}`);
+                            
+                            let dataDisplay = '';
+                            try {
+                                dataDisplay = JSON.stringify(notification.data, null, 2);
+                            } catch(e) {
+                                dataDisplay = "Kunne ikke vise data: " + e.message;
+                            }
                             
                             html += `
                                 <div class="alert alert-secondary mb-3">
                                     <p><strong>Tidspunkt:</strong> ${time}</p>
                                     <p><strong>Emne:</strong> ${topic}</p>
-                                    <pre>${data}</pre>
+                                    <pre>${dataDisplay}</pre>
                                 </div>
                             `;
                         }
@@ -505,7 +572,7 @@
                     }
                 });
                 
-                console.log('Opdaterer DOM med nye notifikationer');
+                console.log('Opdaterer DOM med nye notifikationer, HTML længde:', html.length);
                 notificationsList.innerHTML = html;
                 
                 // Tilføj en kort animation på dashboardet for at indikere opdatering

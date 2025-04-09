@@ -43,7 +43,14 @@ const translations = {
         authorizeFirst: "Autoriser først denne forbindelse",
         authorizeBtn: "Autoriser",
         unauthorizedConnection: "Uautoriseret forbindelse",
-		qualityEvents: "Kvalitetsvurderinger"
+		qualityEvents: "Kvalitetsvurderinger",websocketMethod: 'WebSocket (realtid, anbefalet)',
+        pollingMethod: 'Polling (manuel opdatering)',
+        methodLabel: 'Metode',
+        pollingIntervalLabel: 'Opdateringsinterval (sekunder)',
+        seconds10: '10 sekunder',
+        seconds30: '30 sekunder',
+        minute1: '1 minut',
+        minutes5: '5 minutter'
     },
     "en": {
         appTitle: "Genesys Cloud Notification Listener",
@@ -88,7 +95,15 @@ const translations = {
         authorizeFirst: "Authorize this connection first",
         authorizeBtn: "Authorize",
 		qualityEvents: "Quality Evaluations",
-        unauthorizedConnection: "Unauthorized connection"
+        unauthorizedConnection: "Unauthorized connection",
+		websocketMethod: 'WebSocket (real-time, recommended)',
+        pollingMethod: 'Polling (manual updates)',
+        methodLabel: 'Method',
+        pollingIntervalLabel: 'Update interval (seconds)',
+        seconds10: '10 seconds',
+        seconds30: '30 seconds',
+        minute1: '1 minute',
+        minutes5: '5 minutes'
     },
     "de": {
         appTitle: "Genesys Cloud Benachrichtigungsempfänger",
@@ -133,7 +148,15 @@ const translations = {
         authorizeFirst: "Autorisieren Sie zuerst diese Verbindung",
         authorizeBtn: "Autorisieren",
 		qualityEvents: "Qualitätsbewertungen",
-        unauthorizedConnection: "Nicht autorisierte Verbindung"
+        unauthorizedConnection: "Nicht autorisierte Verbindung",
+		websocketMethod: 'WebSocket (real-time, recommended)',
+        pollingMethod: 'Polling (manual updates)',
+        methodLabel: 'Method',
+        pollingIntervalLabel: 'Update interval (seconds)',
+        seconds10: '10 seconds',
+        seconds30: '30 seconds',
+        minute1: '1 minute',
+        minutes5: '5 minutes'
     },
     "fr": {
         appTitle: "Écouteur de Notifications Genesys Cloud",
@@ -178,7 +201,15 @@ const translations = {
         authorizeFirst: "Autorisez d'abord cette connexion",
         authorizeBtn: "Autoriser",
 		qualityEvents: "Évaluations de qualité",
-        unauthorizedConnection: "Connexion non autorisée"
+        unauthorizedConnection: "Connexion non autorisée",
+		websocketMethod: 'WebSocket (real-time, recommended)',
+        pollingMethod: 'Polling (manual updates)',
+        methodLabel: 'Method',
+        pollingIntervalLabel: 'Update interval (seconds)',
+        seconds10: '10 seconds',
+        seconds30: '30 seconds',
+        minute1: '1 minute',
+        minutes5: '5 minutes'
     }
 };
 

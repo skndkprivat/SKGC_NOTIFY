@@ -31,4 +31,8 @@ Thumbs.db
 
 # Midlertidige filer
 tmp/
-temp/
+temp/"node_modules/" 
+"config/" 
+".env" 
+"*.key" 
+"*.log" 

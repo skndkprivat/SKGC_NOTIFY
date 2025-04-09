@@ -17,7 +17,7 @@
     "purecloud-platform-client-v2": "^129.0.0",
     "uuid": "^11.1.0",
     "winston": "^3.8.2",
-    "ws": "^8.18.1"
+	"ws": "^8.16.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

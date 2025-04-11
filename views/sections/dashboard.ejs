@@ -1,0 +1,21 @@
+<!-- Notification Dashboard -->
+<div class="form-section" id="dashboard-section">
+    <h2><%= t.notificationDashboard %></h2>
+    <% if (activeNotifications.length === 0) { %>
+        <p><%= t.startListeningToSee %></p>
+    <% } else { %>
+        <div class="mb-3">
+            <label for="connectionSelector" class="form-label"><%= t.selectConnection %></label>
+            <select class="form-control" id="connectionSelector">
+                <option value=""><%= t.selectConnectionToView %></option>
+                <% activeNotifications.forEach(active => { %>
+                    <option value="<%= active.id %>"><%= active.name %></option>
+                <% }) %>
+            </select>
+        </div>
+
+        <%- include('../partials/notifications/filters') %>
+        <!-- API Stats er flyttet til index.ejs og skal ikke inkluderes her -->
+        <%- include('../partials/notifications/list') %>
+    <% } %>
+</div>

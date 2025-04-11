@@ -1,0 +1,65 @@
+<!-- Connections -->
+<div class="form-section">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><%= t.connections %></h2>
+        <button class="btn btn-sm btn-outline-secondary toggle-section" data-section="connections">
+            <i class="bi bi-chevron-up"></i>
+        </button>
+    </div>
+    <div id="connections-content">
+        <div class="row">
+            <% connections.forEach(connection => { %>
+                <div class="col-md-4">
+                    <div class="card connection-card">
+                        <div class="card-header">
+                            <h5 class="card-title"><%= connection.name %></h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong><%= t.region %>:</strong> <%= connection.region %></p>
+                            <p><strong><%= t.clientId %>:</strong> <%= connection.clientId.substring(0, 8) %>...</p>
+                        <div class="d-flex justify-content-between">
+                            <% if(!connection.authorized) { %>
+                                <a href="/auth/<%= connection.id %>" class="btn btn-primary btn-sm">Autoriser</a>
+                            <% } else { %>
+                                <span class="badge bg-success">✓ Autoriseret</span>
+                            <% } %>
+                            <form action="/connections/remove/<%= connection.id %>" method="POST" class="ms-2">
+                                <button type="submit" class="btn btn-danger btn-sm"><%= t.removeBtn %></button>
+                            </form>
+                        </div>                     
+                    </div>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+        
+        <hr>
+        
+        <h3><%= t.addNewConnection %></h3>
+        <form action="/connections/add" method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label"><%= t.customerName %></label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+            <div class="mb-3">
+                <label for="clientId" class="form-label"><%= t.clientId %></label>
+                <input type="text" class="form-control" id="clientId" name="clientId" required>
+            </div>
+            <div class="mb-3">
+                <label for="clientSecret" class="form-label"><%= t.clientSecret %></label>
+                <input type="password" class="form-control" id="clientSecret" name="clientSecret" required>
+            </div>
+            <div class="mb-3">
+                <label for="region" class="form-label"><%= t.region %></label>
+                <select class="form-control" id="region" name="region">
+                    <option value="mypurecloud.de" selected>Frankfurt (mypurecloud.de)</option>
+                    <option value="mypurecloud.com">US East (mypurecloud.com)</option>
+                    <option value="mypurecloud.ie">Dublin (mypurecloud.ie)</option>
+                    <option value="mypurecloud.com.au">Sydney (mypurecloud.com.au)</option>
+                    <option value="mypurecloud.jp">Tokyo (mypurecloud.jp)</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary"><%= t.addBtn %></button>
+        </form>
+    </div>
+</div>

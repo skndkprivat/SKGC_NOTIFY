@@ -14,13 +14,13 @@ const logger = require('./utils/logger');
 const { translations } = require('./utils/translations');
 const { encrypt, decrypt } = require('./services/encryption');
 const { saveConnectionsConfig, loadConnectionsConfig } = require('./services/token');
+const { getAppStats, resetAppStats } = require('./services/stats');
 
 // Load environment variables
 dotenv.config();
 
 // Create Express app
 const app = express();
-const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(express.json());
@@ -74,7 +74,7 @@ app.get('/lang/:lang', (req, res) => {
     res.redirect('/');
 });
 
-// API-rute for at hente notifikationer - KUN ÉN DEFINITION AF DENNE RUTE
+// API-rute for at hente notifikationer
 app.get('/api/notifications/:connectionId', (req, res) => {
     const { connectionId } = req.params;
     logger.info('API request for notifications', { connectionId });
@@ -94,15 +94,6 @@ app.get('/api/notifications/:connectionId', (req, res) => {
             count: notificationsList ? notificationsList.length : 0 
         });
         
-        // Vis første notifikation i log (til fejlfinding)
-        if (notificationsList && notificationsList.length > 0) {
-            logger.info('First notification sample', {
-                timestamp: notificationsList[0].timestamp,
-                topic: notificationsList[0].topic,
-                dataPreview: JSON.stringify(notificationsList[0].data).substring(0, 100) + '...'
-            });
-        }
-        
         res.json(notificationsList || []);
     } catch (error) {
         logger.error('Error fetching notifications', { 
@@ -113,20 +104,15 @@ app.get('/api/notifications/:connectionId', (req, res) => {
     }
 });
 
-// Testendpoint for at bekræfte at notifikationer virker
-app.get('/test-notifications/:connectionId', (req, res) => {
-    const { connectionId } = req.params;
-    
-    // Opret en testnotifikation manuelt
-    const testNotifications = [{
-        timestamp: new Date(),
-        topic: 'test-topic',
-        data: {
-            message: 'Dette er en testnotifikation direkte fra API'
-        }
-    }];
-    
-    res.json(testNotifications);
+// Tilføj en API-rute for at hente statistikker
+app.get('/api/stats', (req, res) => {
+    res.json(getAppStats());
+});
+
+// Tilføj en rute for at nulstille statistikker
+app.post('/api/stats/reset', (req, res) => {
+    resetAppStats();
+    res.json({ success: true, message: 'Stats reset successfully' });
 });
 
 // Use route modules
@@ -150,11 +136,6 @@ app.use((err, req, res, next) => {
             ? 'An unexpected error occurred' 
             : err.message
     });
-});
-
-// Start the server
-app.listen(port, () => {
-    logger.info(`Server running on port ${port}`);
 });
 
 // Export app for potential testing or extended use

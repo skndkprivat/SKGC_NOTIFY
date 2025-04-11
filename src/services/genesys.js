@@ -2,6 +2,7 @@ const logger = require('../utils/logger');
 const { loadConnectionsConfig } = require('./token');
 const platformClient = require('purecloud-platform-client-v2');
 const WebSocket = require('ws');
+const { incrementApiCounter } = require('./stats');
 
 // Store for client connections and status data
 const clientConnections = {};
@@ -102,6 +103,7 @@ async function connectToGenesys(connectionId, topics, options = {}) {
             try {
                 // Test API-kaldet med UsersApi
                 const usersApi = new platformClient.UsersApi();
+                incrementApiCounter('getUsersMe');
                 const me = await usersApi.getUsersMe();
                 logger.info('Authentication successful', { 
                     userId: me.id,
@@ -156,6 +158,384 @@ async function connectToGenesys(connectionId, topics, options = {}) {
         return Promise.reject(error);
     }
 }
+
+async function pollQueueStatistics(connectionId, connection) {
+    try {
+        logger.info('Starting simplified queue statistics polling', { connectionId });
+        
+        const client = platformClient.ApiClient.instance;
+        client.setAccessToken(connection.accessToken);
+        
+        try {
+            // Hent grundlæggende API-instanser
+            const routingApi = new platformClient.RoutingApi();
+            const presenceApi = new platformClient.PresenceApi();
+            const usersApi = new platformClient.UsersApi();
+            
+            // 1. Hent alle køer
+            incrementApiCounter('getRoutingQueues');
+            const queuesResponse = await routingApi.getRoutingQueues({
+                pageSize: 25,
+                pageNumber: 1
+            });
+            
+            if (!queuesResponse || !queuesResponse.entities || queuesResponse.entities.length === 0) {
+                logger.info('No queues found', { connectionId });
+                return;
+            }
+            
+            logger.info(`Found ${queuesResponse.entities.length} queues`, { connectionId });
+            
+            // 2. Hent alle brugere
+            incrementApiCounter('getUsers');
+            const usersResponse = await usersApi.getUsers({
+                pageSize: 100,
+                pageNumber: 1
+            });
+            
+            if (!usersResponse || !usersResponse.entities) {
+                logger.info('No users found', { connectionId });
+                return;
+            }
+            
+            const allUsers = usersResponse.entities;
+            logger.info(`Found ${allUsers.length} users`, { connectionId });
+            
+            // 3. Hent brugerstatus for hver bruger
+            const userStatusMap = {};
+            for (const user of allUsers) {
+                try {
+                    incrementApiCounter('getUserPresence');
+                    const presenceResponse = await presenceApi.getUserPresence(user.id, 'PURECLOUD');
+                    
+                    userStatusMap[user.id] = {
+                        id: user.id,
+                        name: user.name,
+                        status: presenceResponse.presenceDefinition.systemPresence,
+                        isAvailable: presenceResponse.presenceDefinition.systemPresence === 'AVAILABLE' || 
+                 presenceResponse.presenceDefinition.systemPresence === 'On Queue'
+                    };
+                    
+                    logger.info(`User ${user.name} status: ${userStatusMap[user.id].status}`, { userId: user.id });
+                } catch (error) {
+                    logger.error('Error fetching user presence', { userId: user.id, error: error.message });
+                }
+            }
+            
+            // 4. For hver kø, hent medlemmer og tæl aktive brugere
+            for (const queue of queuesResponse.entities) {
+                try {
+                    // Opret en notifikation for køen
+                    const notification = {
+                        timestamp: new Date(),
+                        topic: 'v2.routing.queues.statistics',
+                        data: {
+                            id: queue.id,
+                            name: queue.name,
+                            description: queue.description || '',
+                            statistics: {
+                                usersActive: 0,
+                                usersAvailable: 0,
+                                usersOnQueue: 0,
+                                contactsWaiting: 0,
+                                longestWaitingMs: 0
+                            }
+                        }
+                    };
+                    
+                    // Hent kømedlemmer
+                    try {
+                        incrementApiCounter('getRoutingQueueMembers');
+                        
+                        logger.info(`Fetching members for queue ${queue.name}`, { 
+                            queueId: queue.id 
+                        });
+                        
+                        // Prøv at hente medlemmer med joined=true
+                        const queueMembersResponse = await routingApi.getRoutingQueueMembers(queue.id, {
+                            joined: true,
+                            pageSize: 100,
+                            pageNumber: 1
+                        });
+                        
+                        if (queueMembersResponse && queueMembersResponse.entities) {
+                            const queueMembers = queueMembersResponse.entities;
+                            
+                            // Log detaljeret information om medlemmerne
+                            logger.info(`Queue ${queue.name} has ${queueMembers.length} members with joined=true`, { 
+                                queueId: queue.id,
+                                memberCount: queueMembers.length,
+                                memberIds: queueMembers.map(m => m.id)
+                            });
+                            
+                            // Hvis vi har mindst ét medlem, log detaljer om det første medlem for at forstå datastrukturen
+                            if (queueMembers.length > 0) {
+                                try {
+                                    logger.info(`Sample queue member data for ${queue.name}`, {
+                                        queueId: queue.id,
+                                        memberSample: JSON.stringify(queueMembers[0]).substring(0, 500)
+                                    });
+                                } catch (e) {
+                                    logger.info(`Could not stringify queue member data: ${e.message}`);
+                                }
+                            }
+                            
+                            // Sæt total antal brugere på køen
+                            notification.data.statistics.usersOnQueue = queueMembers.length;
+                            
+                            // Tæl aktive og tilgængelige brugere baseret på presence
+                            let activeUsers = 0;
+                            let availableUsers = 0;
+                            
+                            // Hvis vi ikke har nogen kømedlemmer, prøv en alternativ tilgang
+                            if (queueMembers.length === 0) {
+                                logger.info(`No queue members found with joined=true, trying without joined filter`, {
+                                    queueId: queue.id
+                                });
+                                
+                                // Hent alle kømedlemmer uanset joined status
+                                const allQueueMembersResponse = await routingApi.getRoutingQueueMembers(queue.id, {
+                                    pageSize: 100,
+                                    pageNumber: 1
+                                });
+                                
+                                if (allQueueMembersResponse && allQueueMembersResponse.entities) {
+                                    const allMembers = allQueueMembersResponse.entities;
+                                    
+                                    // Log information om alle medlemmer
+                                    logger.info(`Queue ${queue.name} has ${allMembers.length} total members (including not joined)`, {
+                                        queueId: queue.id,
+                                        totalMemberCount: allMembers.length
+                                    });
+                                    
+                                    // Hvis vi har medlemmer, men ingen var joined=true, brug alle medlemmer i stedet
+                                    if (allMembers.length > 0) {
+                                        // Log det første medlem for at forstå datastrukturen
+                                        try {
+                                            logger.info(`Sample queue member data (all members) for ${queue.name}`, {
+                                                queueId: queue.id,
+                                                memberSample: JSON.stringify(allMembers[0]).substring(0, 500)
+                                            });
+                                        } catch (e) {
+                                            logger.info(`Could not stringify queue member data: ${e.message}`);
+                                        }
+                                        
+                                        // Brug alle medlemmer og opdater statistikken
+                                        queueMembers.push(...allMembers);
+                                        notification.data.statistics.usersOnQueue = queueMembers.length;
+                                    }
+                                }
+                            }
+                            
+                            // Gå gennem hver bruger for at tjekke deres status
+                            for (const member of queueMembers) {
+                                // Brug den brugerstatus vi hentede tidligere
+                                const userStatus = userStatusMap[member.id];
+                                
+                                if (userStatus) {
+                                    logger.info(`Queue member ${userStatus.name} status for ${queue.name}: ${userStatus.status}`, {
+                                        queueId: queue.id,
+                                        userId: member.id,
+                                        status: userStatus.status,
+                                        // Log eventuel joined status for at forstå datastrukturen
+                                        joined: member.joined
+                                    });
+                                    
+                                    // En bruger på køen tælles som aktiv hvis ikke OFFLINE
+                                    if (userStatus.status !== 'OFFLINE') {
+                                        activeUsers++;
+                                    }
+                                    
+                                    // En bruger tælles som tilgængelig hvis de er AVAILABLE
+                                    if (userStatus.isAvailable) {
+                                        availableUsers++;
+                                    }
+                                } else {
+                                    logger.info(`No status found for queue member in ${queue.name}, fetching now`, {
+                                        memberId: member.id
+                                    });
+                                    
+                                    // Hvis vi ikke har status for denne bruger, forsøg at hente den nu
+                                    try {
+                                        incrementApiCounter('getUserPresence');
+                                        const presence = await presenceApi.getUserPresence(member.id, 'PURECLOUD');
+                                        
+                                        // Log den hentede status
+                                        logger.info(`Fetched presence for queue member: ${presence.presenceDefinition.systemPresence}`, {
+                                            memberId: member.id,
+                                            queueId: queue.id
+                                        });
+                                        
+                                        // Behandl status
+                                        if (presence.presenceDefinition.systemPresence !== 'OFFLINE') {
+                                            activeUsers++;
+                                        }
+                                        
+                                        if (presence.presenceDefinition.systemPresence === 'AVAILABLE' || 
+											presence.presenceDefinition.systemPresence === 'On Queue') {
+                                            availableUsers++;
+                                        }
+                                    } catch (presenceError) {
+                                        logger.error('Error fetching presence for queue member', {
+                                            error: presenceError.message,
+                                            memberId: member.id
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            // Opdater statistikken med brugertælling
+                            notification.data.statistics.usersActive = activeUsers;
+                            notification.data.statistics.usersAvailable = availableUsers;
+                            
+                            // Log detaljerede statistikker
+                            logger.info(`Final queue stats for ${queue.name}`, {
+                                queueId: queue.id,
+                                usersOnQueue: notification.data.statistics.usersOnQueue,
+                                usersActive: notification.data.statistics.usersActive,
+                                usersAvailable: notification.data.statistics.usersAvailable
+                            });
+                        } else {
+                            logger.info(`No entities in queueMembersResponse for ${queue.name}`, { queueId: queue.id });
+                        }
+                    } catch (memberError) {
+                        logger.error('Error fetching queue members', {
+                            queueId: queue.id,
+                            queueName: queue.name,
+                            error: memberError.message
+                        });
+                        
+                        // Hvis den første metode fejler, prøv uden joined parameter
+                        try {
+                            logger.info(`Trying to fetch queue members without joined parameter for ${queue.name}`, { queueId: queue.id });
+                            
+                            const fallbackResponse = await routingApi.getRoutingQueueMembers(queue.id, {
+                                pageSize: 100,
+                                pageNumber: 1
+                            });
+                            
+                            if (fallbackResponse && fallbackResponse.entities) {
+                                const allMembers = fallbackResponse.entities;
+                                
+                                logger.info(`Fallback method returned ${allMembers.length} members for ${queue.name}`, {
+                                    queueId: queue.id
+                                });
+                                
+                                // Behandl dem på samme måde som ovenfor
+                                notification.data.statistics.usersOnQueue = allMembers.length;
+                                
+                                let activeUsers = 0;
+                                let availableUsers = 0;
+                                
+                                // Tæl aktive og tilgængelige brugere
+                                for (const member of allMembers) {
+                                    const userStatus = userStatusMap[member.id];
+                                    
+                                    if (userStatus) {
+                                        if (userStatus.status !== 'OFFLINE') {
+                                            activeUsers++;
+                                        }
+                                        
+                                        if (userStatus.isAvailable) {
+                                            availableUsers++;
+                                        }
+                                    }
+                                }
+                                
+                                notification.data.statistics.usersActive = activeUsers;
+                                notification.data.statistics.usersAvailable = availableUsers;
+                                
+                                logger.info(`Fallback queue stats for ${queue.name}`, {
+                                    queueId: queue.id,
+                                    usersOnQueue: notification.data.statistics.usersOnQueue,
+                                    usersActive: notification.data.statistics.usersActive,
+                                    usersAvailable: notification.data.statistics.usersAvailable
+                                });
+                            }
+                        } catch (fallbackError) {
+                            logger.error('Error in fallback method for queue members', {
+                                queueId: queue.id,
+                                error: fallbackError.message
+                            });
+                        }
+                    }
+                    
+                    // Hent ventende samtaler
+                    try {
+                        const conversationsApi = new platformClient.ConversationsApi();
+                        
+                        if (typeof conversationsApi.getConversations === 'function') {
+                            incrementApiCounter('getConversations');
+                            const conversationsResponse = await conversationsApi.getConversations();
+                            
+                            if (conversationsResponse && conversationsResponse.entities) {
+                                let waitingContacts = 0;
+                                let longestWaitingMs = 0;
+                                const now = new Date();
+                                
+                                // Tæl ventende samtaler for denne kø
+                                conversationsResponse.entities.forEach(conv => {
+                                    if (conv.participants) {
+                                        conv.participants.forEach(p => {
+                                            if (p.purpose === 'customer' && 
+                                                p.queueId === queue.id && 
+                                                (p.state === 'alerting' || p.state === 'waiting')) {
+                                                
+                                                waitingContacts++;
+                                                
+                                                if (p.startTime) {
+                                                    const startTime = new Date(p.startTime);
+                                                    const waitTime = now - startTime;
+                                                    
+                                                    if (waitTime > longestWaitingMs) {
+                                                        longestWaitingMs = waitTime;
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                                
+                                notification.data.statistics.contactsWaiting = waitingContacts;
+                                notification.data.statistics.longestWaitingMs = longestWaitingMs;
+                                
+                                logger.info(`Queue ${queue.name} has ${waitingContacts} waiting contacts`, {
+                                    queueId: queue.id,
+                                    waitingContacts,
+                                    longestWaitingMs
+                                });
+                            }
+                        }
+                    } catch (convError) {
+                        logger.error('Error fetching conversations', {
+                            queueId: queue.id,
+                            error: convError.message
+                        });
+                    }
+                    
+                    // Tilføj eller opdater notifikationen
+                    updateOrAddNotification(connectionId, notification);
+                    
+                } catch (queueError) {
+                    logger.error('Error processing queue', {
+                        queueId: queue.id,
+                        error: queueError.message
+                    });
+                }
+            }
+            
+        } catch (apiError) {
+            logger.error('Error in queue statistics polling', {
+                error: apiError.message
+            });
+        }
+        
+    } catch (error) {
+        logger.error('Top-level error in queue statistics polling', {
+            error: error.message
+        });
+    }
+}
 // Funktion til at starte regelmæssig polling af brugerstatus
 function startStatusPolling(connectionId, connection) {
     const interval = clientConnections[connectionId].options.pollingInterval || 30000;
@@ -180,6 +560,11 @@ function startStatusPolling(connectionId, connection) {
             if (hasQualityTopic) {
                 await pollQualityEvaluations(connectionId, connection);
             }
+			
+			// Hvis vi lytter til kø-statistik, hent dem
+			if (clientConnections[connectionId].topics.some(topic => topic.includes('queues'))) {
+				await pollQueueStatistics(connectionId, connection);
+			}
             
         } catch (error) {
             logger.error('Error in poll data', { error: error.message });
@@ -212,6 +597,7 @@ async function pollAllUsersPresence(connectionId, connection) {
             
             try {
                 // Hent en side af brugere
+                incrementApiCounter('getUsers');
                 const usersResponse = await usersApi.getUsers({
                     pageSize: pageSize,
                     pageNumber: pageNumber
@@ -225,6 +611,7 @@ async function pollAllUsersPresence(connectionId, connection) {
                     for (const user of usersResponse.entities) {
                         try {
                             // Hent presence for denne bruger
+                            incrementApiCounter('getUserPresence');
                             const presence = await presenceApi.getUserPresence(user.id, 'PURECLOUD');
                             
                             // Skab en notifikation-lignende struktur
@@ -288,6 +675,7 @@ async function pollQualityEvaluations(connectionId, connection) {
         const now = new Date();
         const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
         
+        incrementApiCounter('getQualityEvaluations');
         const response = await qualityApi.getQualityEvaluations({
             pageSize: 25,
             pageNumber: 1, 
@@ -347,7 +735,35 @@ function updateOrAddNotification(connectionId, notification) {
                 });
             }
         }
-    } else {
+    } 
+    // Håndtér kø-statistikker specifikt for at undgå duplikater
+    else if (notification.topic.includes('routing.queues.statistics')) {
+        // Tjek om vi allerede har en notifikation for denne kø
+        const existingIndex = notifications[connectionId].findIndex(
+            n => n.topic === notification.topic && n.data.id === notification.data.id
+        );
+        
+        if (existingIndex === -1) {
+            // Ny kø - tilføj til starten
+            notifications[connectionId].unshift(notification);
+            logger.info(`Added queue stats for ${notification.data.name}`, {
+                usersOnQueue: notification.data.statistics.usersOnQueue,
+                usersActive: notification.data.statistics.usersActive,
+                usersAvailable: notification.data.statistics.usersAvailable,
+                waitingContacts: notification.data.statistics.contactsWaiting || 0
+            });
+        } else {
+            // Opdater eksisterende kø-statistik
+            notifications[connectionId][existingIndex] = notification;
+            logger.info(`Updated queue stats for ${notification.data.name}`, {
+                usersOnQueue: notification.data.statistics.usersOnQueue,
+                usersActive: notification.data.statistics.usersActive,
+                usersAvailable: notification.data.statistics.usersAvailable,
+                waitingContacts: notification.data.statistics.contactsWaiting || 0
+            });
+        }
+    }
+    else {
         // For andre notifikationstyper, tilføj dem altid til starten
         notifications[connectionId].unshift(notification);
         
@@ -372,6 +788,7 @@ async function setupWebsocketNotifications(connectionId, connection) {
         const channelId = `streaming-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
         
         // Opret en notifications channel
+        incrementApiCounter('postNotificationsChannels');
         const channel = await notificationsApi.postNotificationsChannels({
             id: channelId,
             connectUri: `wss://streaming.${connection.region}/channels/streaming/subscriptions`,
@@ -411,6 +828,7 @@ async function setupWebsocketNotifications(connectionId, connection) {
         
         try {
             // Abonnér på de ønskede topics
+            incrementApiCounter('postNotificationsChannelSubscriptions');
             await notificationsApi.postNotificationsChannelSubscriptions(
                 channel.id, 
                 subscriptionTopics
@@ -432,7 +850,7 @@ async function setupWebsocketNotifications(connectionId, connection) {
             socket.on('message', (data) => {
                 try {
                     const message = JSON.parse(data);
-                    logger.debug('Received WebSocket message', { 
+                    logger.info('Received WebSocket message', { 
                         type: message.eventBody ? message.eventBody.type : 'unknown',
                         connectionId
                     });
@@ -478,7 +896,7 @@ async function setupWebsocketNotifications(connectionId, connection) {
             socket.on('close', (code, reason) => {
                 logger.info('WebSocket connection closed', { 
                     code, 
-                    reason: reason.toString(),
+                    reason: reason ? reason.toString() : '',
                     connectionId
                 });
                 
@@ -527,8 +945,8 @@ async function setupWebsocketNotifications(connectionId, connection) {
     }
 }
 
-	function disconnectFromGenesys(connectionId) {
-		logger.info('Disconnecting from Genesys Cloud', { connectionId });
+function disconnectFromGenesys(connectionId) {
+    logger.info('Disconnecting from Genesys Cloud', { connectionId });
 
     // Stop polling interval
     if (pollingIntervals[connectionId]) {
@@ -564,6 +982,7 @@ function getActiveNotifications() {
 }
 
 function getNotifications(connectionId) {
+    incrementApiCounter('getNotifications');
     logger.info('Getting notifications for connection', { 
         connectionId,
         count: notifications[connectionId] ? notifications[connectionId].length : 0

@@ -1,282 +1,235 @@
-// Genesys Cloud Notification Listener App
-const express = require('express');
-const dotenv = require('dotenv');
-const path = require('path');
-const { PureCloudPlatformClientV2 } = require('purecloud-platform-client-v2');
-const fs = require('fs');
-
-// Load environment variables
-dotenv.config();
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('view engine', 'ejs');
-
-// Store for client connections
-const clientConnections = {};
-
-// Configuration structure for storing connection profiles
-let configFile = path.join(__dirname, 'config', 'connections.json');
-let connectionsConfig = { connections: [] };
-
-// Create config directory if it doesn't exist
-if (!fs.existsSync(path.join(__dirname, 'config'))) {
-    fs.mkdirSync(path.join(__dirname, 'config'));
-}
-
-// Load existing configuration if available
-if (fs.existsSync(configFile)) {
-    try {
-        connectionsConfig = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    } catch (error) {
-        console.error('Error loading config file:', error);
-    }
-}
-
-// Available notification topics in Genesys Cloud
-const availableTopics = [
-    { id: 'v2.detail.events.conversation', name: 'Samtalebegivenheder' },
-    { id: 'v2.detail.events.user', name: 'Brugerbegivenheder' },
-    { id: 'v2.detail.events.group', name: 'Gruppebegivenheder' },
-    { id: 'v2.detail.events.routing.queue', name: 'Kø-begivenheder' },
-    { id: 'v2.detail.events.routing.email', name: 'Email-begivenheder' },
-    { id: 'v2.detail.events.outbound', name: 'Udgående begivenheder' },
-    { id: 'v2.detail.events.workflow', name: 'Workflow-begivenheder' },
-    { id: 'v2.detail.events.presence', name: 'Tilstedeværelses-begivenheder' },
-    { id: 'v2.detail.events.coaching', name: 'Coaching-begivenheder' }
-];
-
-// Routes
-app.get('/', (req, res) => {
-    res.render('index', { 
-        connections: connectionsConfig.connections,
-        availableTopics: availableTopics,
-        activeNotifications: getActiveNotifications()
-    });
-});
-
-// Add a new connection profile
-app.post('/connections/add', (req, res) => {
-    const { name, clientId, clientSecret, region } = req.body;
+// Hovedapplikationslogik
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM fuldt indlæst');
+    console.log('connectionSelector findes:', !!document.getElementById('connectionSelector'));
+    console.log('notificationsList findes:', !!document.getElementById('notificationsList'));
     
-    // Validate input
-    if (!name || !clientId || !clientSecret || !region) {
-        return res.status(400).json({ error: 'Alle felter er påkrævet' });
-    }
+    const connectionSelector = document.getElementById('connectionSelector');
+    const notificationsList = document.getElementById('notificationsList');
+    let pollingInterval;
+    let statsInterval;
     
-    // Add to configuration
-    const newConnection = {
-        id: Date.now().toString(),
-        name,
-        clientId,
-        clientSecret,
-        region: region || 'mypurecloud.de' // Default to Frankfurt region
-    };
-    
-    connectionsConfig.connections.push(newConnection);
-    
-    // Save configuration securely
-    fs.writeFileSync(configFile, JSON.stringify(connectionsConfig, null, 2));
-    
-    res.redirect('/');
-});
-
-// Remove a connection profile
-app.post('/connections/remove/:id', (req, res) => {
-    const { id } = req.params;
-    
-    // Remove from active connections if needed
-    if (clientConnections[id]) {
-        disconnectFromGenesys(id);
-    }
-    
-    // Remove from configuration
-    connectionsConfig.connections = connectionsConfig.connections.filter(
-        conn => conn.id !== id
-    );
-    
-    // Save configuration
-    fs.writeFileSync(configFile, JSON.stringify(connectionsConfig, null, 2));
-    
-    res.redirect('/');
-});
-
-// Start listening for notifications
-app.post('/notifications/listen', async (req, res) => {
-    const { connectionId, topics } = req.body;
-    
-    if (!connectionId || !topics || !topics.length) {
-        return res.status(400).json({ error: 'Forbindelse og notifikationer er påkrævet' });
-    }
-    
-    try {
-        const connection = connectionsConfig.connections.find(
-            conn => conn.id === connectionId
-        );
-        
-        if (!connection) {
-            return res.status(404).json({ error: 'Forbindelse ikke fundet' });
-        }
-        
-        // Connect to Genesys Cloud and start listening
-        await connectToGenesys(connection, topics);
-        
-        res.redirect('/');
-    } catch (error) {
-        console.error('Error connecting to Genesys Cloud:', error);
-        res.status(500).json({ error: 'Fejl ved forbindelse til Genesys Cloud' });
-    }
-});
-
-// Stop listening for notifications
-app.post('/notifications/stop/:connectionId', (req, res) => {
-    const { connectionId } = req.params;
-    
-    disconnectFromGenesys(connectionId);
-    
-    res.redirect('/');
-});
-
-// API to get notification logs
-app.get('/api/notifications/:connectionId', (req, res) => {
-    const { connectionId } = req.params;
-    const connection = clientConnections[connectionId];
-    
-    if (!connection) {
-        return res.status(404).json({ error: 'Ingen aktiv forbindelse' });
-    }
-    
-    res.json(connection.notifications || []);
-});
-
-// Connect to Genesys Cloud and set up notification listeners
-async function connectToGenesys(connection, topics) {
-    // Initialize the Genesys Cloud client
-    const client = PureCloudPlatformClientV2.ApiClient.instance;
-    client.setEnvironment(connection.region);
-    
-    try {
-        // Authenticate with client credentials
-        await client.loginClientCredentialsGrant(connection.clientId, connection.clientSecret);
-        
-        // Create a notifications API instance
-        const notificationsApi = new PureCloudPlatformClientV2.NotificationsApi();
-        
-        // Create a new channel
-        const channel = await notificationsApi.postNotificationsChannels();
-        
-        // Subscribe to topics
-        const topicSubscriptions = topics.map(topic => ({
-            id: topic
-        }));
-        
-        await notificationsApi.putNotificationsChannelSubscriptions(
-            channel.id, 
-            { entities: topicSubscriptions }
-        );
-        
-        // Set up WebSocket for the channel
-        const webSocket = new WebSocket(channel.connectUri);
-        
-        // Store connection information
-        clientConnections[connection.id] = {
-            client,
-            channel,
-            webSocket,
-            topics,
-            notifications: [],
-            connection
-        };
-        
-        // Set up WebSocket handlers
-        webSocket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log(`Received notification on ${connection.name}:`, data);
+    // Tilføj event listeners til toggle-knapperne
+    const toggleButtons = document.querySelectorAll('.toggle-section');
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const section = this.getAttribute('data-section');
+            const content = document.getElementById(`${section}-content`);
+            const icon = this.querySelector('i');
+            
+            console.log('Toggle klikket for sektion:', section);
+            
+            if (content) {
+                // Tjek computed style i stedet for inline style
+                const currentDisplay = window.getComputedStyle(content).display;
                 
-                // Store notifications (limit to most recent 100)
-                const notifications = clientConnections[connection.id].notifications;
-                notifications.unshift({
-                    timestamp: new Date().toISOString(),
-                    data
-                });
-                
-                // Keep only the most recent 100 notifications
-                if (notifications.length > 100) {
-                    notifications.length = 100;
+                if (currentDisplay === 'none') {
+                    content.style.display = 'block';
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-up');
+                    }
+                    console.log('Viser indhold');
+                } else {
+                    content.style.display = 'none';
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-up');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                    console.log('Skjuler indhold');
                 }
-            } catch (error) {
-                console.error('Error processing notification:', error);
             }
-        };
-        
-        webSocket.onerror = (error) => {
-            console.error(`WebSocket error for ${connection.name}:`, error);
-        };
-        
-        webSocket.onclose = () => {
-            console.log(`WebSocket closed for ${connection.name}`);
-        };
-        
-        console.log(`Successfully connected to Genesys Cloud for ${connection.name}`);
-        
-    } catch (error) {
-        console.error(`Error setting up Genesys Cloud connection for ${connection.name}:`, error);
-        throw error;
-    }
-}
-
-// Disconnect from Genesys Cloud
-function disconnectFromGenesys(connectionId) {
-    const connection = clientConnections[connectionId];
+        });
+    });
     
-    if (!connection) {
-        return;
-    }
+    // Toggle polling interval section baseret på valgt metode
+    const methodRadios = document.querySelectorAll('input[name="method"]');
+    const pollingIntervalSection = document.getElementById('polling-interval-section');
     
-    try {
-        // Close WebSocket
-        if (connection.webSocket) {
-            connection.webSocket.close();
-        }
-        
-        // Delete notification channel
-        if (connection.channel && connection.channel.id) {
-            const notificationsApi = new PureCloudPlatformClientV2.NotificationsApi();
-            notificationsApi.deleteNotificationsChannel(connection.channel.id);
-        }
-        
-        // Remove from active connections
-        delete clientConnections[connectionId];
-        
-        console.log(`Disconnected from Genesys Cloud for ${connection.connection.name}`);
-    } catch (error) {
-        console.error(`Error disconnecting from Genesys Cloud for ${connection.connection.name}:`, error);
-    }
-}
-
-// Get active notifications
-function getActiveNotifications() {
-    const active = [];
-    
-    for (const id in clientConnections) {
-        const conn = clientConnections[id];
-        active.push({
-            id,
-            name: conn.connection.name,
-            topics: conn.topics
+    if (methodRadios && pollingIntervalSection) {
+        methodRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'polling' && this.checked) {
+                    pollingIntervalSection.style.display = 'block';
+                } else {
+                    pollingIntervalSection.style.display = 'none';
+                }
+            });
         });
     }
     
-    return active;
-}
-
-// Start the server
-app.listen(port, () => {
-    console.log(`Genesys Cloud Notification Listener kører på port ${port}`);
+    // Auto-select forbindelse hvis der kun er en
+    function checkAndAutoSelect() {
+        if (connectionSelector && connectionSelector.options.length === 2) {
+            connectionSelector.selectedIndex = 1;
+            const event = new Event('change');
+            connectionSelector.dispatchEvent(event);
+        }
+    }
+    
+    // Kald auto-select efter en kort forsinkelse
+    setTimeout(checkAndAutoSelect, 500);
+    
+    // Event listener for ændring af forbindelse
+    if (connectionSelector) {
+        connectionSelector.addEventListener('change', function() {
+            const connectionId = this.value;
+            
+            if (connectionId) {
+                console.log('Forbindelse valgt:', connectionId);
+                
+                // Find indholdselementerne
+                const connectionsContent = document.getElementById('connections-content');
+                const notificationsContent = document.getElementById('notifications-content');
+                
+                // Log for debugging
+                console.log('Connections content fundet:', !!connectionsContent);
+                console.log('Notifications content fundet:', !!notificationsContent);
+                
+                // Skjul sektioner
+                if (connectionsContent) connectionsContent.style.display = 'none';
+                if (notificationsContent) notificationsContent.style.display = 'none';
+                
+                // Opdater ikonerne
+                const icons = document.querySelectorAll('.toggle-section i');
+                icons.forEach(icon => {
+                    icon.classList.remove('bi-chevron-up');
+                    icon.classList.add('bi-chevron-down');
+                });
+                
+                // Scroll til dashboard
+                const dashboardSection = document.getElementById('dashboard-section');
+                if (dashboardSection) {
+                    dashboardSection.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+                
+                // Vis filter-sektion og stats
+                const filterSection = document.getElementById('notification-filters');
+                if (filterSection) {
+                    filterSection.style.display = 'block';
+                }
+                
+                // Start tracking statistics
+                startStatsTracking();
+                
+                // Hent notifikationer og start polling
+                fetchNotifications(connectionId);
+                startPolling(connectionId);
+            } else {
+                console.log('Ingen forbindelse valgt');
+                
+                // Skjul filter-sektion
+                const filterSection = document.getElementById('notification-filters');
+                if (filterSection) {
+                    filterSection.style.display = 'none';
+                }
+                
+                // Stop stats tracking
+                stopStatsTracking();
+                
+                if (notificationsList) {
+                    notificationsList.innerHTML = '<p class="text-center">Vælg en forbindelse for at se notifikationer</p>';
+                }
+            }
+        });
+    }
+    
+    function startPolling(connectionId) {
+        console.log('Starter polling for ID:', connectionId);
+        // Stop tidligere interval hvis det findes
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+        }
+        
+        // Hent én gang med det samme
+        fetchNotifications(connectionId);
+        
+        // Start nyt interval
+        pollingInterval = setInterval(() => {
+            console.log('Polling: Henter opdaterede notifikationer');
+            fetchNotifications(connectionId);
+        }, 10000); // Opdater hver 10. sekund
+    }
+/* 
+	// Add this code to your main.js or another JavaScript file that runs on page load
+	document.addEventListener('DOMContentLoaded', function() {
+		console.log('Checking for API stats elements...');
+		
+		// Check if the stats section exists
+		const statsSection = document.getElementById('stats-section');
+		if (statsSection) {
+			console.log('Stats section found, setting up tracking');
+			
+			// If setupStatsTracking function exists, call it
+			if (typeof setupStatsTracking === 'function') {
+				setupStatsTracking();
+				console.log('Stats tracking setup complete');
+			} else {
+				console.error('setupStatsTracking function not found');
+			}
+			
+			// Check if a connection is already selected
+			const connectionSelector = document.getElementById('connectionSelector');
+			if (connectionSelector && connectionSelector.value) {
+				console.log('Connection already selected, starting stats tracking');
+				
+				// If startStatsTracking function exists, call it
+				if (typeof startStatsTracking === 'function') {
+					startStatsTracking();
+					console.log('Stats tracking started');
+				} else {
+					console.error('startStatsTracking function not found');
+				}
+			}
+		} else {
+			console.warn('Stats section not found in the DOM');
+		}
+		
+		// Add event listener to connection selector to start stats tracking when changed
+		const connectionSelector = document.getElementById('connectionSelector');
+		if (connectionSelector) {
+			connectionSelector.addEventListener('change', function() {
+				console.log('Connection changed to:', this.value);
+				
+				if (this.value) {
+					// Start tracking stats if a connection is selected
+					if (typeof startStatsTracking === 'function') {
+						startStatsTracking();
+						console.log('Stats tracking started on connection change');
+					}
+				} else {
+					// Stop tracking if no connection is selected
+					if (typeof stopStatsTracking === 'function') {
+						stopStatsTracking();
+						console.log('Stats tracking stopped on connection change');
+					}
+				}
+			});
+		}
+	});
+ */    
+    // Skjul filtre ved start
+    const filterSection = document.getElementById('notification-filters');
+    if (filterSection) {
+        filterSection.style.display = 'none';
+    }
+    
+    // Initialiser filtre og stats
+    if (typeof setupFilterEventListeners === 'function') {
+        setupFilterEventListeners();
+    }
+    
+    if (typeof setupStatsTracking === 'function') {
+        setupStatsTracking();
+    }
+    
+    // Eksporter globale funktioner
+    window.startPolling = startPolling;
+    window.fetchNotifications = fetchNotifications;
+    window.displayNotifications = displayNotifications;
+    window.updateFilteredDisplay = updateFilteredDisplay;
+    window.startStatsTracking = startStatsTracking;
+    window.stopStatsTracking = stopStatsTracking;
 });

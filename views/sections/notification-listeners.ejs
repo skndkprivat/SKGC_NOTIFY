@@ -1,0 +1,106 @@
+<!-- Notification Listener -->
+<div class="form-section">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><%= t.listenToNotifications %></h2>
+        <button class="btn btn-sm btn-outline-secondary toggle-section" data-section="notifications">
+            <i class="bi bi-chevron-up"></i>
+        </button>
+    </div>
+    <div id="notifications-content">
+        <!-- Active Connections -->
+        <div class="mb-4">
+            <h3><%= t.activeConnections %></h3>
+            <% if (activeNotifications.length === 0) { %>
+                <p><%= t.noActiveListeners %></p>
+            <% } else { %>
+                <div class="row">
+                    <% activeNotifications.forEach(active => { %>
+                        <div class="col-md-4">
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h5 class="card-title"><%= active.name %></h5>
+                                </div>
+                                <div class="card-body">
+                                    <p><strong><%= t.listeningTo %></strong></p>
+                                    <ul>
+                                        <% active.topics.forEach(topic => { %>
+                                            <li><%= availableTopics.find(t => t.id === topic)?.name || topic %></li>
+                                        <% }) %>
+                                    </ul>
+                                    <form action="/notifications/stop/<%= active.id %>" method="POST">
+                                        <button type="submit" class="btn btn-warning btn-sm"><%= t.stopListeningBtn %></button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    <% }) %>
+                </div>
+            <% } %>
+        </div>
+        
+        <!-- Start New Listening -->
+        <div>
+            <h3><%= t.startNewListening %></h3>
+            <% if (connections.length === 0) { %>
+                <p><%= t.addConnectionFirst %></p>
+            <% } else { %>
+                <form action="/notifications/listen" method="POST">
+                    <div class="mb-3">
+                        <label for="connectionId" class="form-label"><%= t.selectConnection %></label>
+                        <select class="form-control" id="connectionId" name="connectionId" required>
+                            <option value=""><%= t.selectCustomer %></option>
+                            <% connections.forEach(connection => { %>
+                                <option value="<%= connection.id %>"><%= connection.name %></option>
+                            <% }) %>
+                        </select>
+                    </div>
+                    
+                    <!-- Ny sektion: Vælg metode -->
+                    <div class="mb-3">
+                        <label class="form-label">Metode</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="method" id="method-websocket" value="websocket" checked>
+                            <label class="form-check-label" for="method-websocket">
+                                WebSocket (realtid, anbefalet)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="method" id="method-polling" value="polling">
+                            <label class="form-check-label" for="method-polling">
+                                Polling (manuel opdatering)
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Polling interval (vises kun når polling er valgt) -->
+                    <div class="mb-3" id="polling-interval-section" style="display: none;">
+                        <label for="pollingInterval" class="form-label">Opdateringsinterval (sekunder)</label>
+                        <select class="form-control" id="pollingInterval" name="pollingInterval">
+                            <option value="10000">10 sekunder</option>
+                            <option value="30000" selected>30 sekunder</option>
+                            <option value="60000">1 minut</option>
+                            <option value="300000">5 minutter</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><%= t.selectNotifications %></label>
+                        <div class="row">
+                            <% availableTopics.forEach(topic => { %>
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="topics" value="<%= topic.id %>" id="topic-<%= topic.id %>">
+                                        <label class="form-check-label" for="topic-<%= topic.id %>">
+                                            <%= topic.name %>
+                                        </label>
+                                    </div>
+                                </div>
+                            <% }) %>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success"><%= t.startListeningBtn %></button>
+                </form>
+            <% } %>
+        </div>
+    </div>
+</div>

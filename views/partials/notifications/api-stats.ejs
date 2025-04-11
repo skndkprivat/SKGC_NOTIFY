@@ -1,0 +1,30 @@
+<div id="stats-section" class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><%= t.apiStatistics || 'API Statistics' %></h5>
+        <button id="refresh-stats" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-clockwise"></i> <%= t.refresh || 'Refresh' %>
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 text-center mb-3">
+                <div class="h3" id="api-call-counter">0</div>
+                <div class="text-muted"><%= t.apiCallsTotal || 'Total API Calls' %></div>
+            </div>
+            <div class="col-md-4 text-center mb-3">
+                <div class="h3" id="api-rate-counter">0/min</div>
+                <div class="text-muted"><%= t.apiCallsPerMinute || 'API Calls per Minute' %></div>
+            </div>
+            <div class="col-md-4 text-center mb-3">
+                <div class="h3" id="uptime-counter">0s</div>
+                <div class="text-muted"><%= t.uptime || 'Uptime' %></div>
+            </div>
+        </div>
+        <div class="mt-3">
+            <h6><%= t.topApiEndpoints || 'Top API Endpoints' %></h6>
+            <div id="api-endpoints-chart">
+                <p class="text-center text-muted py-4"><%= t.loadingStats || 'Loading statistics...' %></p>
+            </div>
+        </div>
+    </div>
+</div>

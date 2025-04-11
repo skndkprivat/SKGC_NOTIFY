@@ -3,31 +3,22 @@ const path = require('path');
 
 // Konfigurer logger
 const logger = winston.createLogger({
-    level: 'info',
+    level: process.env.LOG_LEVEL || 'info', // Sæt til 'debug' for at aktivere debug logs
     format: winston.format.combine(
         winston.format.timestamp(),
-        winston.format.errors({ stack: true }),
-        winston.format.splat(),
         winston.format.json()
     ),
     transports: [
-        // Console transport
         new winston.transports.Console({
             format: winston.format.combine(
                 winston.format.colorize(),
                 winston.format.simple()
             )
         }),
-        
-        // File transport for errors
         new winston.transports.File({ 
-            filename: path.join(__dirname, '../../logs/error.log'), 
-            level: 'error' 
-        }),
-        
-        // File transport for all logs
-        new winston.transports.File({ 
-            filename: path.join(__dirname, '../../logs/combined.log') 
+            filename: 'app.log',
+            maxsize: 5242880, // 5MB
+            maxFiles: 5
         })
     ]
 });
@@ -45,8 +36,16 @@ function warn(message, meta = {}) {
     logger.warn(message, meta);
 }
 
+// Tilføj debug funktion
+function debug(message, meta = {}) {
+    // Brug info hvis du ikke vil aktivere debug-niveau i Winston
+    // eller skift til logger.debug hvis du vil bruge Winston's debug niveau
+    logger.info(`[DEBUG] ${message}`, meta);
+}
+
 module.exports = {
     info,
     error,
-    warn
+    warn,
+    debug // Eksporter den nye debug funktion
 };
